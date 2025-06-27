@@ -6,6 +6,9 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.constants import ParseMode
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from config import BOT_TOKEN, ADMIN_USER_ID, SUBSCRIPTION_PLANS, LOG_LEVEL, LOG_FILE
 from database import Database
@@ -621,6 +624,18 @@ class BinaryOptionsBot:
             await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
+
+def run_http_stub():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is running!")
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("", port), Handler)
+    server.serve_forever()
+
+threading.Thread(target=run_http_stub, daemon=True).start()
 
 async def main():
     """Main function"""
