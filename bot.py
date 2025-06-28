@@ -41,7 +41,7 @@ class BinaryOptionsBot:
             first_name=user.first_name,
             last_name=user.last_name
         )
-        is_admin = user_id == 7873163395
+        is_admin = user_id == ADMIN_USER_ID
         if is_admin:
             welcome_message = (
                 "👋 <b>Привет, Админ!</b>\n\n"
@@ -52,11 +52,10 @@ class BinaryOptionsBot:
                 "• Писать от имени бота\n\n"
                 "Выбери действие:")
             keyboard = [
-                [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users")],
-                [InlineKeyboardButton("✅ Подтвердить ID", callback_data="admin_confirm")],
-                [InlineKeyboardButton("🚫 Заблокировать", callback_data="admin_block")],
-                [InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
+                [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users"), InlineKeyboardButton("✅ Подтвердить ID", callback_data="admin_confirm")],
+                [InlineKeyboardButton("🚫 Заблокировать", callback_data="admin_block"), InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
                 [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_main_menu")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
         else:
@@ -70,12 +69,12 @@ class BinaryOptionsBot:
                 "3. Депаешь — и получаешь доступ ко всем сигналам\n\n"
                 "🚀 Готов? Ниже всё, что нужно:")
             keyboard = [
-                InlineKeyboardButton("🔗 Зарегистрироваться", callback_data="register"),
-                InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id"),
-                InlineKeyboardButton("📈 Получить сигнал", callback_data="get_signal"),
-                InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta"),
+                [InlineKeyboardButton("🔗 Зарегистрироваться", callback_data="register"), InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id")],
+                [InlineKeyboardButton("📈 Получить сигнал", callback_data="get_signal")],
+                [InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
             ]
-            reply_markup = InlineKeyboardMarkup([[btn] for btn in keyboard])
+            reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             welcome_message,
             reply_markup=reply_markup,
@@ -115,7 +114,13 @@ class BinaryOptionsBot:
 По всем вопросам обращайтесь к администратору.
         """
         
-        await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(help_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -142,8 +147,8 @@ class BinaryOptionsBot:
             status_text += f"\n⏰ Истекает: {expires_at}"
         
         keyboard = [
-            [InlineKeyboardButton("🔄 Обновить подписку", callback_data="renew_subscription")],
-            [InlineKeyboardButton("📈 Получить сигналы", callback_data="get_signals")]
+            [InlineKeyboardButton("🔄 Обновить подписку", callback_data="renew_subscription"), InlineKeyboardButton("📈 Получить сигналы", callback_data="get_signal")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -156,7 +161,17 @@ class BinaryOptionsBot:
     
     async def signals_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /signals command"""
-        await self.send_latest_signals(update.effective_user.id, update.message.reply_text)
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user or user.get('id_status') != 'confirmed':
+            await update.message.reply_text(
+                "⛔️ Доступ к сигналам пока закрыт.\n\nСначала зарегистрируйся 👉 https://bit.ly/4jb8a4k\nПотом скинь ID и пополни счёт — всё вручную проверяется.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+            )
+            return
+        
+        await self.send_latest_signals(user_id, update.message.reply_text)
     
     async def statistics_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /statistics command"""
@@ -185,48 +200,82 @@ class BinaryOptionsBot:
         else:
             stats_text += "\n📭 Нет активных сигналов"
         
-        await update.message.reply_text(stats_text, parse_mode=ParseMode.HTML)
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(stats_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle button callbacks for registration flow and admin"""
         query = update.callback_query
         await query.answer()
         user_id = query.from_user.id
-        is_admin = user_id == 7873163395
+        is_admin = user_id == ADMIN_USER_ID
         data = query.data
         if is_admin:
-            if data == "admin_users":
-                users = self.db.get_all_users()
-                text = f"👥 Всего пользователей: {len(users)}\n" + "\n".join([str(uid) for uid in users])
-                await query.edit_message_text(text)
-            elif data == "admin_confirm":
-                await query.edit_message_text("Введите команду /confirm ID для подтверждения пользователя.")
-            elif data == "admin_block":
-                await query.edit_message_text("Введите команду /block ID для блокировки пользователя.")
-            elif data == "admin_signal":
-                await query.edit_message_text("Введите команду /signal Актив Вход Время Срок для рассылки сигнала.")
-            elif data == "admin_send":
-                await query.edit_message_text("Введите команду /send ID текст для личного сообщения.")
-            else:
-                await query.edit_message_text("Выберите действие из меню.")
+            await self.handle_admin_callback(query, data)
             return
-        # --- User flow ---
+        await self.handle_user_callback(query, data)
+
+    async def handle_admin_callback(self, query, data):
+        if data == "admin_users":
+            users = self.db.get_all_users()
+            text = f"👥 Всего пользователей: {len(users)}\n" + "\n".join([str(uid) for uid in users])
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, reply_markup=reply_markup)
+        elif data == "admin_confirm":
+            await query.edit_message_text("Введите команду /confirm ID для подтверждения пользователя.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+        elif data == "admin_block":
+            await query.edit_message_text("Введите команду /block ID для блокировки пользователя.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+        elif data == "admin_signal":
+            await query.edit_message_text("Введите команду /signal Актив Вход Время Срок для рассылки сигнала.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+        elif data == "admin_send":
+            await query.edit_message_text("Введите команду /send ID текст для личного сообщения.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+        elif data == "admin_main_menu":
+            await self.start_admin_menu(query)
+        else:
+            await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+
+    async def start_admin_menu(self, query):
+        keyboard = [
+            [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users"), InlineKeyboardButton("✅ Подтвердить ID", callback_data="admin_confirm")],
+            [InlineKeyboardButton("🚫 Заблокировать", callback_data="admin_block"), InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
+            [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_main_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "👋 <b>Привет, Админ!</b>\n\nТы в админ-меню. Здесь ты можешь:\n• Подтверждать/блокировать пользователей\n• Рассылать сигналы\n• Смотреть список юзеров\n• Писать от имени бота\n\nВыбери действие:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+
+    async def handle_user_callback(self, query, data):
         if data == "register":
             await query.edit_message_text(
-                "Регистрируйся только по этой ссылке 👇\nhttps://bit.ly/4jb8a4k\n\n‼️ Без неё ты не попадёшь в базу, и бот не даст тебе сигналы.\nПосле регистрации — скинь ID сюда.")
+                "Регистрируйся только по этой ссылке 👇\nhttps://bit.ly/4jb8a4k\n\n‼️ Без неё ты не попадёшь в базу, и бот не даст тебе сигналы.\nПосле регистрации — скинь ID сюда.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]])
+            )
         elif data == "send_id":
             await query.edit_message_text(
-                "📤 Напиши сюда свой ID после регистрации на платформе.\nЯ вручную проверю — и открою тебе доступ к сигналам.\n\nЕсли уже депнул — получишь доступ сразу.")
+                "📤 Напиши сюда свой ID после регистрации на платформе.\nЯ вручную проверю — и открою тебе доступ к сигналам.\n\nЕсли уже депнул — получишь доступ сразу.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]])
+            )
         elif data == "get_signal":
-            user = self.db.get_user(user_id)
+            user = self.db.get_user(query.from_user.id)
             if not user or user.get('id_status') != 'confirmed':
                 await query.edit_message_text(
-                    "⛔️ Доступ к сигналам пока закрыт.\n\nСначала зарегистрируйся 👉 https://bit.ly/4jb8a4k\nПотом скинь ID и пополни счёт — всё вручную проверяется.")
+                    "⛔️ Доступ к сигналам пока закрыт.\n\nСначала зарегистрируйся 👉 https://bit.ly/4jb8a4k\nПотом скинь ID и пополни счёт — всё вручную проверяется.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+                )
             else:
-                # Генерируем сигнал (заглушка)
                 signal = self.signal_generator.generate_signal('EUR/USD')
                 if not signal:
-                    await query.edit_message_text("😔 Сейчас нет сигнала. Попробуй позже.")
+                    await query.edit_message_text("😔 Сейчас нет сигнала. Попробуй позже.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]))
                 else:
                     text = (
                         f"📢 Готово! Текущий сигнал:\n\n"
@@ -237,8 +286,39 @@ class BinaryOptionsBot:
                         f"💪 Уверенность: высокая\n\n"
                         f"👀 Заходи быстро — окно сделки может закрыться!"
                     )
-                    await query.edit_message_text(text)
-        # Поддержка — просто ссылка, не требует обработки
+                    keyboard = [
+                        [InlineKeyboardButton("📊 Получить еще сигналы", callback_data="get_signal"), InlineKeyboardButton("📈 Статистика", callback_data="statistics")],
+                        [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+                    ]
+                    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        elif data == "main_menu":
+            await self.start_user_menu(query)
+        elif data == "pay_premium":
+            await self.handle_premium_subscription(query)
+        elif data == "pay_vip":
+            await self.handle_vip_subscription(query)
+        elif data == "statistics":
+            await self.handle_statistics(query)
+        elif data == "get_signals":
+            await self.handle_free_signals(query)
+        elif data == "renew_subscription":
+            await self.handle_renew_subscription(query)
+        else:
+            await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]))
+
+    async def start_user_menu(self, query):
+        keyboard = [
+            [InlineKeyboardButton("🔗 Зарегистрироваться", callback_data="register"), InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id")],
+            [InlineKeyboardButton("📈 Получить сигнал", callback_data="get_signal")],
+            [InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "👋 Привет, трейдер!\n\nТут работают только те, кто реально заходит в сделки и поднимает.\n\n📊 Я даю сигналы на вход. Что делать тебе — просто следовать.\n\nНо сначала — 3 шага:\n1. Регистрируешься по ссылке\n2. Скидываешь ID\n3. Депаешь — и получаешь доступ ко всем сигналам\n\n🚀 Готов? Ниже всё, что нужно:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
     
     async def handle_free_signals(self, query):
         """Handle free signals request"""
@@ -251,6 +331,7 @@ class BinaryOptionsBot:
             if datetime.now() - last_activity < timedelta(days=1):
                 await query.edit_message_text(
                     "⏰ Вы уже получили бесплатный сигнал сегодня. Попробуйте завтра или оформите подписку!",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]),
                     parse_mode=ParseMode.HTML
                 )
                 return
@@ -263,6 +344,7 @@ class BinaryOptionsBot:
         else:
             await query.edit_message_text(
                 "😔 К сожалению, сейчас нет подходящих сигналов. Попробуйте позже!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]),
                 parse_mode=ParseMode.HTML
             )
     
@@ -289,7 +371,7 @@ class BinaryOptionsBot:
         
         keyboard = [
             [InlineKeyboardButton("💳 Оплатить", callback_data="pay_premium")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -324,7 +406,7 @@ class BinaryOptionsBot:
         
         keyboard = [
             [InlineKeyboardButton("💳 Оплатить", callback_data="pay_vip")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -349,7 +431,7 @@ class BinaryOptionsBot:
         """
         
         keyboard = [
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -383,7 +465,7 @@ class BinaryOptionsBot:
         """
         
         keyboard = [
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -397,9 +479,8 @@ class BinaryOptionsBot:
     async def handle_renew_subscription(self, query):
         """Handle subscription renewal request"""
         keyboard = [
-            [InlineKeyboardButton("💎 Premium", callback_data="pay_premium")],
-            [InlineKeyboardButton("👑 VIP", callback_data="pay_vip")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton("💎 Premium", callback_data="pay_premium"), InlineKeyboardButton("👑 VIP", callback_data="pay_vip")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -435,8 +516,8 @@ class BinaryOptionsBot:
         """
         
         keyboard = [
-            [InlineKeyboardButton("📊 Получить еще сигналы", callback_data="get_signals")],
-            [InlineKeyboardButton("📈 Статистика", callback_data="statistics")]
+            [InlineKeyboardButton("📊 Получить еще сигналы", callback_data="get_signal"), InlineKeyboardButton("📈 Статистика", callback_data="statistics")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -466,6 +547,7 @@ class BinaryOptionsBot:
         if not self.db.is_user_subscribed(user_id):
             await send_function(
                 "❌ У вас нет активной подписки. Оформите подписку для получения сигналов!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]),
                 parse_mode=ParseMode.HTML
             )
             return
@@ -482,6 +564,7 @@ class BinaryOptionsBot:
             else:
                 await send_function(
                     "😔 К сожалению, сейчас нет подходящих сигналов. Попробуйте позже!",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]),
                     parse_mode=ParseMode.HTML
                 )
         else:
@@ -528,7 +611,7 @@ class BinaryOptionsBot:
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle admin commands (customized for new flow)"""
         user_id = update.effective_user.id
-        if user_id != 7873163395:
+        if user_id != ADMIN_USER_ID:
             await update.message.reply_text("❌ У вас нет прав администратора.")
             return
         if not context.args:
@@ -604,17 +687,25 @@ class BinaryOptionsBot:
         text = update.message.text.strip()
         # Проверяем, что это число (ID платформы)
         if not text.isdigit():
-            await update.message.reply_text("❗️ ID должен содержать только цифры. Попробуй ещё раз.")
+            await update.message.reply_text(
+                "❗️ ID должен содержать только цифры. Попробуй ещё раз.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+            )
             return
         # Проверяем, не занят ли этот ID
         existing = self.db.get_user_by_platform_id(text)
         if existing and existing.get('user_id') != user_id:
-            await update.message.reply_text("⛔️ Этот ID уже используется другим пользователем.")
+            await update.message.reply_text(
+                "⛔️ Этот ID уже используется другим пользователем.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+            )
             return
         # Сохраняем ID и сбрасываем статус на 'pending'
         self.db.set_platform_id(user_id, text)
         await update.message.reply_text(
-            "✅ ID сохранён!\n\nОжидай подтверждения — после проверки ты получишь доступ к сигналам.\n\nЕсли уже депнул — доступ откроется сразу.")
+            "✅ ID сохранён!\n\nОжидай подтверждения — после проверки ты получишь доступ к сигналам.\n\nЕсли уже депнул — доступ откроется сразу.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+        )
         # TODO: Запустить автонапоминания (через 30 мин, 1 час, 2 часа...)
     
     def setup_handlers(self):
