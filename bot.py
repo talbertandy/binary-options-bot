@@ -210,15 +210,29 @@ class BinaryOptionsBot:
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle button callbacks for registration flow and admin"""
-        query = update.callback_query
-        await query.answer()
-        user_id = query.from_user.id
-        is_admin = user_id == ADMIN_USER_ID
-        data = query.data
-        if is_admin:
-            await self.handle_admin_callback(query, data)
-            return
-        await self.handle_user_callback(query, data)
+        try:
+            query = update.callback_query
+            await query.answer()
+            user_id = query.from_user.id
+            is_admin = user_id == ADMIN_USER_ID
+            data = query.data
+            
+            logger.info(f"Callback received: {data} from user {user_id}")
+            
+            if is_admin:
+                await self.handle_admin_callback(query, data)
+                return
+            await self.handle_user_callback(query, data)
+        except Exception as e:
+            logger.error(f"Error in button_callback: {e}")
+            try:
+                await update.callback_query.answer("❌ Произошла ошибка")
+                await update.callback_query.edit_message_text(
+                    "❌ Произошла ошибка. Попробуйте еще раз.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+                )
+            except Exception as inner_e:
+                logger.error(f"Error handling callback error: {inner_e}")
 
     async def handle_admin_callback(self, query, data):
         try:
@@ -469,56 +483,63 @@ class BinaryOptionsBot:
         )
 
     async def handle_user_callback(self, query, data):
-        if data == "register":
-            await query.edit_message_text(
-                "Регистрируйся только по этой ссылке 👇\nhttps://bit.ly/4jb8a4k\n\n‼️ Без неё ты не попадёшь в базу, и бот не даст тебе сигналы.\nПосле регистрации — скинь ID сюда.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]])
-            )
-        elif data == "send_id":
-            await query.edit_message_text(
-                "📤 Напиши сюда свой ID после регистрации на платформе.\nЯ вручную проверю — и открою тебе доступ к сигналам.\n\nЕсли уже депнул — получишь доступ сразу.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]])
-            )
-        elif data == "get_signal":
-            user = self.db.get_user(query.from_user.id)
-            if not user or user.get('id_status') != 'confirmed':
+        try:
+            if data == "register":
                 await query.edit_message_text(
-                    "⛔️ Доступ к сигналам пока закрыт.\n\nСначала зарегистрируйся 👉 https://bit.ly/4jb8a4k\nПотом скинь ID и пополни счёт — всё вручную проверяется.",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+                    "Регистрируйся только по этой ссылке 👇\nhttps://bit.ly/4jb8a4k\n\n‼️ Без неё ты не попадёшь в базу, и бот не даст тебе сигналы.\nПосле регистрации — скинь ID сюда.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]])
                 )
-            else:
-                signal = self.signal_generator.generate_signal('EUR/USD')
-                if not signal:
-                    await query.edit_message_text("😔 Сейчас нет сигнала. Попробуй позже.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]))
-                else:
-                    text = (
-                        f"📢 Готово! Текущий сигнал:\n\n"
-                        f"📍 Актив: {signal['asset']}\n"
-                        f"📈 ВХОД: {'ВВЕРХ' if signal['signal_type']=='CALL' else 'ВНИЗ'}\n"
-                        f"⏱ Время: сейчас\n"
-                        f"⌛ Срок: 2 минуты\n"
-                        f"💪 Уверенность: высокая\n\n"
-                        f"👀 Заходи быстро — окно сделки может закрыться!"
+            elif data == "send_id":
+                await query.edit_message_text(
+                    "📤 Напиши сюда свой ID после регистрации на платформе.\nЯ вручную проверю — и открою тебе доступ к сигналам.\n\nЕсли уже депнул — получишь доступ сразу.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]])
+                )
+            elif data == "get_signal":
+                user = self.db.get_user(query.from_user.id)
+                if not user or user.get('id_status') != 'confirmed':
+                    await query.edit_message_text(
+                        "⛔️ Доступ к сигналам пока закрыт.\n\nСначала зарегистрируйся 👉 https://bit.ly/4jb8a4k\nПотом скинь ID и пополни счёт — всё вручную проверяется.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
                     )
-                    keyboard = [
-                        [InlineKeyboardButton("📊 Получить еще сигналы", callback_data="get_signal"), InlineKeyboardButton("📈 Статистика", callback_data="statistics")],
-                        [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
-                    ]
-                    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-        elif data == "main_menu":
-            await self.start_user_menu(query)
-        elif data == "pay_premium":
-            await self.handle_premium_subscription(query)
-        elif data == "pay_vip":
-            await self.handle_vip_subscription(query)
-        elif data == "statistics":
-            await self.handle_statistics(query)
-        elif data == "get_signals":
-            await self.handle_free_signals(query)
-        elif data == "renew_subscription":
-            await self.handle_renew_subscription(query)
-        else:
-            await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]))
+                else:
+                    signal = self.signal_generator.generate_signal('EUR/USD')
+                    if not signal:
+                        await query.edit_message_text("😔 Сейчас нет сигнала. Попробуй позже.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]))
+                    else:
+                        text = (
+                            f"📢 Готово! Текущий сигнал:\n\n"
+                            f"📍 Актив: {signal['asset']}\n"
+                            f"📈 ВХОД: {'ВВЕРХ' if signal['signal_type']=='CALL' else 'ВНИЗ'}\n"
+                            f"⏱ Время: сейчас\n"
+                            f"⌛ Срок: 2 минуты\n"
+                            f"💪 Уверенность: высокая\n\n"
+                            f"👀 Заходи быстро — окно сделки может закрыться!"
+                        )
+                        keyboard = [
+                            [InlineKeyboardButton("📊 Получить еще сигналы", callback_data="get_signal"), InlineKeyboardButton("📈 Статистика", callback_data="statistics")],
+                            [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+                        ]
+                        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            elif data == "main_menu":
+                await self.start_user_menu(query)
+            elif data == "pay_premium":
+                await self.handle_premium_subscription(query)
+            elif data == "pay_vip":
+                await self.handle_vip_subscription(query)
+            elif data == "statistics":
+                await self.handle_statistics(query)
+            elif data == "get_signals":
+                await self.handle_free_signals(query)
+            elif data == "renew_subscription":
+                await self.handle_renew_subscription(query)
+            else:
+                await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]))
+        except Exception as e:
+            logger.error(f"Error in handle_user_callback: {e}")
+            await query.edit_message_text(
+                "❌ Произошла ошибка. Попробуйте еще раз.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+            )
 
     async def start_user_menu(self, query):
         keyboard = [
@@ -1091,49 +1112,94 @@ class BinaryOptionsBot:
     
     async def run(self):
         """Run the bot"""
-        if not BOT_TOKEN:
-            logger.error("BOT_TOKEN not found in environment variables")
-            return
-        
-        self.application = Application.builder().token(BOT_TOKEN).build()
-        self.setup_handlers()
-        self.setup_scheduler()
-        
-        logger.info("Starting Binary Options Signals Bot...")
-        
-        # Start the bot
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-        
         try:
-            # Keep the bot running
+            if not BOT_TOKEN:
+                logger.error("BOT_TOKEN not found in environment variables")
+                return
+            
+            self.application = Application.builder().token(BOT_TOKEN).build()
+            self.setup_handlers()
+            # Remove scheduler for now to prevent crashes
+            # self.setup_scheduler()
+            
+            logger.info("Starting Binary Options Signals Bot...")
+            
+            # Start the bot
+            await self.application.initialize()
+            await self.application.start()
+            await self.application.updater.start_polling()
+            
+            logger.info("Bot started successfully!")
+            
+            # Keep the bot running with better error handling
             while True:
-                schedule.run_pending()
-                await asyncio.sleep(1)
+                try:
+                    # Remove scheduler for now
+                    # schedule.run_pending()
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"Error in main loop: {e}")
+                    await asyncio.sleep(5)  # Wait before retrying
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Critical error in bot run: {e}")
         except KeyboardInterrupt:
             logger.info("Stopping bot...")
         finally:
-            await self.application.updater.stop()
-            await self.application.stop()
-            await self.application.shutdown()
+            try:
+                await self.application.updater.stop()
+                await self.application.stop()
+                await self.application.shutdown()
+                logger.info("Bot stopped successfully")
+            except Exception as e:
+                logger.error(f"Error stopping bot: {e}")
 
 def run_http_stub():
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"Bot is running!")
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("", port), Handler)
-    server.serve_forever()
+    try:
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                try:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(b"Bot is running!")
+                except Exception as e:
+                    logger.error(f"Error in HTTP handler: {e}")
+            
+            def log_message(self, format, *args):
+                # Suppress HTTP server logs
+                pass
+        
+        port = int(os.environ.get("PORT", 8080))
+        server = HTTPServer(("", port), Handler)
+        logger.info(f"HTTP stub server started on port {port}")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Error starting HTTP stub server: {e}")
 
-threading.Thread(target=run_http_stub, daemon=True).start()
+# Start HTTP stub in background thread
+try:
+    threading.Thread(target=run_http_stub, daemon=True).start()
+    logger.info("HTTP stub thread started")
+except Exception as e:
+    logger.error(f"Error starting HTTP stub thread: {e}")
 
 async def main():
     """Main function"""
-    bot = BinaryOptionsBot()
-    await bot.run()
+    try:
+        logger.info("Starting bot application...")
+        bot = BinaryOptionsBot()
+        await bot.run()
+    except Exception as e:
+        logger.error(f"Critical error in main: {e}")
+        # Wait a bit before exiting to allow logs to be written
+        await asyncio.sleep(2)
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}") 
