@@ -6,13 +6,19 @@ from telegram.constants import ParseMode
 import random
 from datetime import datetime
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+# Подробное логирование
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Конфигурация
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = int(os.getenv('ADMIN_USER_ID', '0'))
+
+logger.info(f"BOT_TOKEN: {'SET' if BOT_TOKEN else 'NOT SET'}")
+logger.info(f"ADMIN_ID: {ADMIN_ID}")
 
 # Простая база данных в памяти
 users = {}
@@ -24,6 +30,8 @@ class SimpleBot:
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /start"""
+        logger.info(f"START command from user {update.effective_user.id}")
+        
         user = update.effective_user
         user_id = user.id
         
@@ -34,15 +42,19 @@ class SimpleBot:
                 'status': 'new',
                 'platform_id': None
             }
+            logger.info(f"New user added: {user_id}")
         
         # Показываем меню
         if user_id == ADMIN_ID:
+            logger.info("Showing admin menu")
             await self.show_admin_menu(update.message.reply_text)
         else:
+            logger.info("Showing user menu")
             await self.show_user_menu(update.message.reply_text)
     
     async def show_user_menu(self, reply_func):
         """Показать меню пользователя"""
+        logger.info("Creating user menu")
         keyboard = [
             [InlineKeyboardButton("🔗 Регистрация", callback_data="register")],
             [InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id")],
@@ -50,41 +62,58 @@ class SimpleBot:
             [InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta")]
         ]
         
-        await reply_func(
-            "👋 <b>Добро пожаловать!</b>\n\n1. Зарегистрируйтесь\n2. Отправьте ID\n3. Получите сигналы",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await reply_func(
+                "👋 <b>Добро пожаловать!</b>\n\n1. Зарегистрируйтесь\n2. Отправьте ID\n3. Получите сигналы",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+            logger.info("User menu sent successfully")
+        except Exception as e:
+            logger.error(f"Error sending user menu: {e}")
     
     async def show_admin_menu(self, reply_func):
         """Показать админ меню"""
+        logger.info("Creating admin menu")
         keyboard = [
             [InlineKeyboardButton("👥 Пользователи", callback_data="users")],
             [InlineKeyboardButton("✅ Подтвердить", callback_data="confirm")],
             [InlineKeyboardButton("📢 Сигнал всем", callback_data="broadcast")]
         ]
         
-        await reply_func(
-            "👋 <b>Админ-панель</b>",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await reply_func(
+                "👋 <b>Админ-панель</b>",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+            logger.info("Admin menu sent successfully")
+        except Exception as e:
+            logger.error(f"Error sending admin menu: {e}")
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка кнопок"""
+        logger.info(f"Button callback: {update.callback_query.data} from user {update.callback_query.from_user.id}")
+        
         query = update.callback_query
         await query.answer()
         
         user_id = query.from_user.id
         data = query.data
         
-        if user_id == ADMIN_ID:
-            await self.handle_admin_callback(query, data)
-        else:
-            await self.handle_user_callback(query, data)
+        try:
+            if user_id == ADMIN_ID:
+                await self.handle_admin_callback(query, data)
+            else:
+                await self.handle_user_callback(query, data)
+        except Exception as e:
+            logger.error(f"Error in button handler: {e}")
+            await query.edit_message_text("❌ Ошибка. Попробуйте еще раз.")
     
     async def handle_user_callback(self, query, data):
         """Обработка кнопок пользователя"""
+        logger.info(f"User callback: {data}")
+        
         if data == "register":
             await query.edit_message_text(
                 "🔗 <b>Регистрация</b>\n\nПерейдите: https://bit.ly/4jb8a4k\n\nПосле регистрации отправьте ID.",
@@ -120,6 +149,8 @@ class SimpleBot:
     
     async def handle_admin_callback(self, query, data):
         """Обработка кнопок админа"""
+        logger.info(f"Admin callback: {data}")
+        
         if data == "users":
             text = "👥 <b>Пользователи:</b>\n\n"
             for uid, user in users.items():
@@ -187,33 +218,42 @@ class SimpleBot:
         user_id = update.effective_user.id
         text = update.message.text.strip()
         
-        if user_id == ADMIN_ID:
-            # Админ отправляет сигнал
-            if any(word in text.upper() for word in ['EUR/USD', 'GBP/USD', 'USD/JPY', 'ВВЕРХ', 'ВНИЗ']):
-                await self.broadcast_signal(text)
-                await update.message.reply_text("✅ Сигнал разослан!")
+        logger.info(f"Message from {user_id}: {text}")
+        
+        try:
+            if user_id == ADMIN_ID:
+                # Админ отправляет сигнал
+                if any(word in text.upper() for word in ['EUR/USD', 'GBP/USD', 'USD/JPY', 'ВВЕРХ', 'ВНИЗ']):
+                    await self.broadcast_signal(text)
+                    await update.message.reply_text("✅ Сигнал разослан!")
+                else:
+                    await update.message.reply_text("📢 Сообщение разослано всем!")
             else:
-                await update.message.reply_text("📢 Сообщение разослано всем!")
-        else:
-            # Пользователь отправляет ID
-            if text.isdigit():
-                users[user_id]['platform_id'] = text
-                users[user_id]['status'] = 'pending'
-                pending_ids[user_id] = text
-                
-                await update.message.reply_text("✅ ID сохранен! Ожидайте подтверждения.")
-                
-                # Уведомляем админа
-                try:
-                    await self.app.bot.send_message(
-                        ADMIN_ID,
-                        f"🆔 <b>Новый ID!</b>\n\n👤 {update.effective_user.first_name}\n🆔 {user_id}\n📱 {text}",
-                        parse_mode=ParseMode.HTML
-                    )
-                except:
-                    pass
-            else:
-                await update.message.reply_text("❗️ ID должен содержать только цифры")
+                # Пользователь отправляет ID
+                if text.isdigit():
+                    if user_id not in users:
+                        users[user_id] = {'name': update.effective_user.first_name, 'status': 'new'}
+                    
+                    users[user_id]['platform_id'] = text
+                    users[user_id]['status'] = 'pending'
+                    pending_ids[user_id] = text
+                    
+                    await update.message.reply_text("✅ ID сохранен! Ожидайте подтверждения.")
+                    
+                    # Уведомляем админа
+                    try:
+                        await self.app.bot.send_message(
+                            ADMIN_ID,
+                            f"🆔 <b>Новый ID!</b>\n\n👤 {update.effective_user.first_name}\n🆔 {user_id}\n📱 {text}",
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception as e:
+                        logger.error(f"Error notifying admin: {e}")
+                else:
+                    await update.message.reply_text("❗️ ID должен содержать только цифры")
+        except Exception as e:
+            logger.error(f"Error in message handler: {e}")
+            await update.message.reply_text("❌ Ошибка. Попробуйте еще раз.")
     
     def generate_signal(self):
         """Генерация простого сигнала"""
@@ -236,7 +276,8 @@ class SimpleBot:
         for uid in confirmed_users:
             try:
                 await self.app.bot.send_message(uid, text, parse_mode=ParseMode.HTML)
-            except:
+            except Exception as e:
+                logger.error(f"Error sending signal to {uid}: {e}")
                 continue
     
     async def run(self):
@@ -245,23 +286,28 @@ class SimpleBot:
             logger.error("BOT_TOKEN не найден!")
             return
         
+        logger.info("Создаем приложение...")
         self.app = Application.builder().token(BOT_TOKEN).build()
         
         # Добавляем обработчики
+        logger.info("Добавляем обработчики...")
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.message_handler))
         
         logger.info("Бот запускается...")
         
-        await self.app.initialize()
-        await self.app.start()
-        await self.app.updater.start_polling()
-        
-        logger.info("Бот запущен!")
-        
-        # Держим бота запущенным
-        await self.app.updater.idle()
+        try:
+            await self.app.initialize()
+            await self.app.start()
+            await self.app.updater.start_polling()
+            
+            logger.info("Бот запущен успешно!")
+            
+            # Держим бота запущенным
+            await self.app.updater.idle()
+        except Exception as e:
+            logger.error(f"Ошибка запуска бота: {e}")
 
 # HTTP сервер для Cloud Run
 import threading
@@ -280,6 +326,7 @@ def run_http_server():
     
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(("", port), Handler)
+    logger.info(f"HTTP server started on port {port}")
     server.serve_forever()
 
 # Запускаем HTTP сервер в фоне
@@ -288,5 +335,6 @@ threading.Thread(target=run_http_server, daemon=True).start()
 # Запускаем бота
 if __name__ == "__main__":
     import asyncio
+    logger.info("Starting bot application...")
     bot = SimpleBot()
     asyncio.run(bot.run()) 
