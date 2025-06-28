@@ -54,7 +54,7 @@ class BinaryOptionsBot:
             keyboard = [
                 [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users"), InlineKeyboardButton("✅ Подтвердить ID", callback_data="admin_confirm")],
                 [InlineKeyboardButton("🚫 Заблокировать", callback_data="admin_block"), InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
-                [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send")],
+                [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send"), InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_send_broadcast")],
                 [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_main_menu")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -222,29 +222,216 @@ class BinaryOptionsBot:
 
     async def handle_admin_callback(self, query, data):
         if data == "admin_users":
-            users = self.db.get_all_users()
-            text = f"👥 Всего пользователей: {len(users)}\n" + "\n".join([str(uid) for uid in users])
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(text, reply_markup=reply_markup)
+            await self.show_admin_users_list(query)
         elif data == "admin_confirm":
-            await query.edit_message_text("Введите команду /confirm ID для подтверждения пользователя.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            await self.show_pending_users(query)
         elif data == "admin_block":
-            await query.edit_message_text("Введите команду /block ID для блокировки пользователя.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            await self.show_all_users_for_block(query)
         elif data == "admin_signal":
-            await query.edit_message_text("Введите команду /signal Актив Вход Время Срок для рассылки сигнала.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            await self.show_signal_broadcast_form(query)
         elif data == "admin_send":
-            await query.edit_message_text("Введите команду /send ID текст для личного сообщения.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            await self.show_user_message_form(query)
+        elif data == "admin_send_broadcast":
+            await self.start_broadcast_message(query)
         elif data == "admin_main_menu":
             await self.start_admin_menu(query)
+        elif data.startswith("confirm_user_"):
+            user_id = int(data.split("_")[2])
+            await self.confirm_user_admin(query, user_id)
+        elif data.startswith("block_user_"):
+            user_id = int(data.split("_")[2])
+            await self.block_user_admin(query, user_id)
+        elif data.startswith("message_user_"):
+            user_id = int(data.split("_")[2])
+            await self.start_message_to_user(query, user_id)
         else:
             await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+
+    async def show_admin_users_list(self, query):
+        """Show all users with their status"""
+        users = self.db.get_all_users_detailed()
+        if not users:
+            text = "👥 Пользователей пока нет"
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
+        else:
+            text = "👥 <b>Список всех пользователей:</b>\n\n"
+            keyboard = []
+            
+            for user in users[:10]:  # Show first 10 users
+                status_emoji = "✅" if user.get('id_status') == 'confirmed' else "⏳" if user.get('id_status') == 'pending' else "❌"
+                platform_id = user.get('platform_id', 'Не указан')
+                text += f"{status_emoji} <b>ID:</b> {user['user_id']}\n"
+                text += f"   <b>Имя:</b> {user.get('first_name', 'Неизвестно')}\n"
+                text += f"   <b>Platform ID:</b> {platform_id}\n"
+                text += f"   <b>Статус:</b> {user.get('id_status', 'Не указан')}\n\n"
+                
+                # Add action buttons for each user
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ Подтвердить {user['user_id']}", callback_data=f"confirm_user_{user['user_id']}"),
+                    InlineKeyboardButton(f"🚫 Блок {user['user_id']}", callback_data=f"block_user_{user['user_id']}")
+                ])
+                keyboard.append([
+                    InlineKeyboardButton(f"✉️ Написать {user['user_id']}", callback_data=f"message_user_{user['user_id']}")
+                ])
+            
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    async def show_pending_users(self, query):
+        """Show only pending users for confirmation"""
+        users = self.db.get_pending_users()
+        if not users:
+            text = "⏳ Пользователей ожидающих подтверждения нет"
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
+        else:
+            text = "⏳ <b>Пользователи ожидающие подтверждения:</b>\n\n"
+            keyboard = []
+            
+            for user in users:
+                platform_id = user.get('platform_id', 'Не указан')
+                text += f"👤 <b>ID:</b> {user['user_id']}\n"
+                text += f"   <b>Имя:</b> {user.get('first_name', 'Неизвестно')}\n"
+                text += f"   <b>Platform ID:</b> {platform_id}\n\n"
+                
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ Подтвердить {user['user_id']}", callback_data=f"confirm_user_{user['user_id']}"),
+                    InlineKeyboardButton(f"🚫 Блок {user['user_id']}", callback_data=f"block_user_{user['user_id']}")
+                ])
+            
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    async def show_all_users_for_block(self, query):
+        """Show all users for blocking"""
+        users = self.db.get_all_users_detailed()
+        if not users:
+            text = "👥 Пользователей для блокировки нет"
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
+        else:
+            text = "🚫 <b>Выберите пользователя для блокировки:</b>\n\n"
+            keyboard = []
+            
+            for user in users:
+                status_emoji = "✅" if user.get('id_status') == 'confirmed' else "⏳" if user.get('id_status') == 'pending' else "❌"
+                text += f"{status_emoji} <b>ID:</b> {user['user_id']} - {user.get('first_name', 'Неизвестно')}\n"
+                keyboard.append([InlineKeyboardButton(f"🚫 Блок {user['user_id']}", callback_data=f"block_user_{user['user_id']}")])
+            
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    async def confirm_user_admin(self, query, user_id):
+        """Confirm user access"""
+        self.db.confirm_user_id(user_id)
+        user = self.db.get_user(user_id)
+        user_name = user.get('first_name', 'Неизвестно') if user else 'Неизвестно'
+        
+        # Notify user
+        try:
+            await self.application.bot.send_message(
+                user_id, 
+                "✅ <b>Доступ к сигналам открыт!</b>\n\nТеперь ты можешь получать сигналы. Используй кнопку '📈 Получить сигнал' в главном меню.",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error notifying user {user_id}: {e}")
+        
+        await query.edit_message_text(
+            f"✅ <b>Пользователь подтверждён!</b>\n\nID: {user_id}\nИмя: {user_name}\n\nПользователь получил уведомление о подтверждении.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]]),
+            parse_mode=ParseMode.HTML
+        )
+
+    async def block_user_admin(self, query, user_id):
+        """Block user"""
+        self.db.block_user(user_id)
+        user = self.db.get_user(user_id)
+        user_name = user.get('first_name', 'Неизвестно') if user else 'Неизвестно'
+        
+        # Notify user
+        try:
+            await self.application.bot.send_message(
+                user_id, 
+                "🚫 <b>Ваш доступ заблокирован администратором.</b>\n\nПо всем вопросам обращайтесь в поддержку.",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error notifying user {user_id}: {e}")
+        
+        await query.edit_message_text(
+            f"🚫 <b>Пользователь заблокирован!</b>\n\nID: {user_id}\nИмя: {user_name}\n\nПользователь получил уведомление о блокировке.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]]),
+            parse_mode=ParseMode.HTML
+        )
+
+    async def start_message_to_user(self, query, user_id):
+        """Start message to specific user"""
+        user = self.db.get_user(user_id)
+        user_name = user.get('first_name', 'Неизвестно') if user else 'Неизвестно'
+        
+        # Store user_id in context for message handling
+        query.from_user.id  # This will be used to store the target user_id
+        
+        await query.edit_message_text(
+            f"✉️ <b>Написать сообщение пользователю</b>\n\nID: {user_id}\nИмя: {user_name}\n\nНапишите сообщение, которое хотите отправить:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]]),
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Set admin state to waiting for message
+        # We'll handle this in message handler
+
+    async def show_signal_broadcast_form(self, query):
+        """Show signal broadcast form"""
+        await query.edit_message_text(
+            "📢 <b>Рассылка сигнала</b>\n\nНапишите сигнал в формате:\n\n"
+            "Актив ВХОД Время Срок\n\n"
+            "Например:\nEUR/USD ВВЕРХ сейчас 2мин\n\n"
+            "Или просто напишите текст сигнала:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]),
+            parse_mode=ParseMode.HTML
+        )
+
+    async def show_user_message_form(self, query):
+        """Show user selection for messaging"""
+        users = self.db.get_all_users_detailed()
+        if not users:
+            await query.edit_message_text(
+                "👥 Пользователей для отправки сообщений нет",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]])
+            )
+            return
+        
+        text = "✉️ <b>Выберите пользователя для отправки сообщения:</b>\n\n"
+        keyboard = []
+        
+        for user in users[:10]:  # Show first 10 users
+            text += f"👤 <b>ID:</b> {user['user_id']} - {user.get('first_name', 'Неизвестно')}\n"
+            keyboard.append([InlineKeyboardButton(f"✉️ Написать {user['user_id']}", callback_data=f"message_user_{user['user_id']}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    async def start_broadcast_message(self, query):
+        """Start broadcast message to all users"""
+        await query.edit_message_text(
+            "📢 <b>Рассылка сообщения всем пользователям</b>\n\nНапишите сообщение, которое хотите разослать всем пользователям:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]),
+            parse_mode=ParseMode.HTML
+        )
 
     async def start_admin_menu(self, query):
         keyboard = [
             [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users"), InlineKeyboardButton("✅ Подтвердить ID", callback_data="admin_confirm")],
             [InlineKeyboardButton("🚫 Заблокировать", callback_data="admin_block"), InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
-            [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send")],
+            [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send"), InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_send_broadcast")],
             [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_main_menu")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -685,6 +872,12 @@ class BinaryOptionsBot:
         user = update.effective_user
         user_id = user.id
         text = update.message.text.strip()
+        
+        # Check if this is admin sending a message or signal
+        if user_id == ADMIN_USER_ID:
+            await self.handle_admin_message(update, context, text)
+            return
+        
         # Проверяем, что это число (ID платформы)
         if not text.isdigit():
             await update.message.reply_text(
@@ -706,8 +899,132 @@ class BinaryOptionsBot:
             "✅ ID сохранён!\n\nОжидай подтверждения — после проверки ты получишь доступ к сигналам.\n\nЕсли уже депнул — доступ откроется сразу.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
         )
-        # TODO: Запустить автонапоминания (через 30 мин, 1 час, 2 часа...)
-    
+        
+        # Уведомляем админа о новом ID
+        await self.notify_admin_new_id(user, text)
+
+    async def notify_admin_new_id(self, user, platform_id):
+        """Notify admin about new platform ID submission"""
+        try:
+            user_name = user.first_name or user.username or "Неизвестно"
+            notification_text = f"""
+🆔 <b>Новый ID от пользователя!</b>
+
+👤 <b>Пользователь:</b> {user_name}
+🆔 <b>Telegram ID:</b> {user.id}
+📱 <b>Platform ID:</b> {platform_id}
+⏰ <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}
+
+Выберите действие:
+            """
+            
+            keyboard = [
+                [InlineKeyboardButton(f"✅ Подтвердить {user.id}", callback_data=f"confirm_user_{user.id}")],
+                [InlineKeyboardButton(f"🚫 Блок {user.id}", callback_data=f"block_user_{user.id}")],
+                [InlineKeyboardButton(f"✉️ Написать {user.id}", callback_data=f"message_user_{user.id}")],
+                [InlineKeyboardButton("👥 Все пользователи", callback_data="admin_users")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await self.application.bot.send_message(
+                ADMIN_USER_ID,
+                notification_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error notifying admin: {e}")
+
+    async def handle_admin_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle admin sending messages or signals"""
+        # Check if admin is in message mode (we'll implement state management)
+        # For now, we'll handle broadcast signals and user messages
+        
+        # Check if it's a signal broadcast (contains keywords)
+        if any(keyword in text.upper() for keyword in ['EUR/USD', 'GBP/USD', 'USD/JPY', 'ВВЕРХ', 'ВНИЗ', 'CALL', 'PUT']):
+            await self.broadcast_signal_to_all_users(text)
+            await update.message.reply_text(
+                f"✅ <b>Сигнал разослан всем пользователям!</b>\n\n{text}",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            # Assume it's a broadcast message
+            await self.broadcast_message_to_all_users(text)
+            await update.message.reply_text(
+                f"✅ <b>Сообщение разослано всем пользователям!</b>\n\n{text}",
+                parse_mode=ParseMode.HTML
+            )
+
+    async def broadcast_signal_to_all_users(self, signal_text: str):
+        """Broadcast signal to all confirmed users"""
+        try:
+            users = self.db.get_all_users_detailed()
+            confirmed_users = [user for user in users if user.get('id_status') == 'confirmed']
+            
+            formatted_signal = f"""
+🚨 <b>НОВЫЙ СИГНАЛ!</b>
+
+{signal_text}
+
+⏰ <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}
+
+💡 <b>Рекомендации:</b>
+• Используйте 1-2% от депозита
+• Следуйте указанным уровням
+• Не торгуйте на эмоциях
+
+⚠️ <b>Риск-менеджмент:</b>
+Торговля бинарными опционами связана с высокими рисками.
+            """
+            
+            for user in confirmed_users:
+                try:
+                    await self.application.bot.send_message(
+                        user['user_id'],
+                        formatted_signal,
+                        parse_mode=ParseMode.HTML
+                    )
+                    await asyncio.sleep(0.1)  # Small delay to avoid rate limiting
+                except Exception as e:
+                    logger.error(f"Error sending signal to user {user['user_id']}: {e}")
+                    continue
+            
+            logger.info(f"Signal broadcasted to {len(confirmed_users)} users")
+            
+        except Exception as e:
+            logger.error(f"Error in broadcast_signal_to_all_users: {e}")
+
+    async def broadcast_message_to_all_users(self, message_text: str):
+        """Broadcast message to all users"""
+        try:
+            users = self.db.get_all_users_detailed()
+            
+            formatted_message = f"""
+📢 <b>Сообщение от администратора:</b>
+
+{message_text}
+
+⏰ <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}
+            """
+            
+            for user in users:
+                try:
+                    await self.application.bot.send_message(
+                        user['user_id'],
+                        formatted_message,
+                        parse_mode=ParseMode.HTML
+                    )
+                    await asyncio.sleep(0.1)  # Small delay to avoid rate limiting
+                except Exception as e:
+                    logger.error(f"Error sending message to user {user['user_id']}: {e}")
+                    continue
+            
+            logger.info(f"Message broadcasted to {len(users)} users")
+            
+        except Exception as e:
+            logger.error(f"Error in broadcast_message_to_all_users: {e}")
+
     def setup_handlers(self):
         """Setup bot handlers"""
         self.application.add_handler(CommandHandler("start", self.start))

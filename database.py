@@ -322,4 +322,41 @@ class Database:
                 return None
         except Exception as e:
             logger.error(f"Error getting user by platform_id: {e}")
-            return None 
+            return None
+
+    def get_all_users_detailed(self) -> List[Dict]:
+        """Get all users with detailed information"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT user_id, username, first_name, last_name, platform_id, id_status, 
+                           subscription_type, subscription_expires, created_at, last_activity
+                    FROM users 
+                    WHERE is_active = TRUE
+                    ORDER BY created_at DESC
+                ''')
+                users = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                return [dict(zip(columns, user)) for user in users]
+        except Exception as e:
+            logger.error(f"Error getting detailed users: {e}")
+            return []
+
+    def get_pending_users(self) -> List[Dict]:
+        """Get users with pending status"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT user_id, username, first_name, last_name, platform_id, id_status, created_at
+                    FROM users 
+                    WHERE id_status = 'pending' AND is_active = TRUE
+                    ORDER BY created_at DESC
+                ''')
+                users = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                return [dict(zip(columns, user)) for user in users]
+        except Exception as e:
+            logger.error(f"Error getting pending users: {e}")
+            return [] 
