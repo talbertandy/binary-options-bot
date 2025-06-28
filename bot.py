@@ -58,6 +58,7 @@ class BinaryOptionsBot:
                 [InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
                 [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send")],
             ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
         else:
             welcome_message = (
                 "👋 Привет, трейдер!\n\n"
@@ -69,12 +70,12 @@ class BinaryOptionsBot:
                 "3. Депаешь — и получаешь доступ ко всем сигналам\n\n"
                 "🚀 Готов? Ниже всё, что нужно:")
             keyboard = [
-                [InlineKeyboardButton("🔗 Зарегистрироваться", callback_data="register")],
-                [InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id")],
-                [InlineKeyboardButton("📈 Получить сигнал", callback_data="get_signal")],
-                [InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta")],
+                InlineKeyboardButton("🔗 Зарегистрироваться", callback_data="register"),
+                InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id"),
+                InlineKeyboardButton("📈 Получить сигнал", callback_data="get_signal"),
+                InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta"),
             ]
-        reply_markup = InlineKeyboardMarkup([[btn] for btn in keyboard])
+            reply_markup = InlineKeyboardMarkup([[btn] for btn in keyboard])
         await update.message.reply_text(
             welcome_message,
             reply_markup=reply_markup,
