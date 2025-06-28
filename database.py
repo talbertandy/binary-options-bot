@@ -338,7 +338,14 @@ class Database:
                 ''')
                 users = cursor.fetchall()
                 columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, user)) for user in users]
+                result = []
+                for user in users:
+                    user_dict = dict(zip(columns, user))
+                    # Ensure user_id is integer
+                    if user_dict.get('user_id'):
+                        user_dict['user_id'] = int(user_dict['user_id'])
+                    result.append(user_dict)
+                return result
         except Exception as e:
             logger.error(f"Error getting detailed users: {e}")
             return []
@@ -356,7 +363,14 @@ class Database:
                 ''')
                 users = cursor.fetchall()
                 columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, user)) for user in users]
+                result = []
+                for user in users:
+                    user_dict = dict(zip(columns, user))
+                    # Ensure user_id is integer
+                    if user_dict.get('user_id'):
+                        user_dict['user_id'] = int(user_dict['user_id'])
+                    result.append(user_dict)
+                return result
         except Exception as e:
             logger.error(f"Error getting pending users: {e}")
             return [] 

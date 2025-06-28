@@ -221,63 +221,90 @@ class BinaryOptionsBot:
         await self.handle_user_callback(query, data)
 
     async def handle_admin_callback(self, query, data):
-        if data == "admin_users":
-            await self.show_admin_users_list(query)
-        elif data == "admin_confirm":
-            await self.show_pending_users(query)
-        elif data == "admin_block":
-            await self.show_all_users_for_block(query)
-        elif data == "admin_signal":
-            await self.show_signal_broadcast_form(query)
-        elif data == "admin_send":
-            await self.show_user_message_form(query)
-        elif data == "admin_send_broadcast":
-            await self.start_broadcast_message(query)
-        elif data == "admin_main_menu":
-            await self.start_admin_menu(query)
-        elif data.startswith("confirm_user_"):
-            user_id = int(data.split("_")[2])
-            await self.confirm_user_admin(query, user_id)
-        elif data.startswith("block_user_"):
-            user_id = int(data.split("_")[2])
-            await self.block_user_admin(query, user_id)
-        elif data.startswith("message_user_"):
-            user_id = int(data.split("_")[2])
-            await self.start_message_to_user(query, user_id)
-        else:
-            await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+        try:
+            if data == "admin_users":
+                await self.show_admin_users_list(query)
+            elif data == "admin_confirm":
+                await self.show_pending_users(query)
+            elif data == "admin_block":
+                await self.show_all_users_for_block(query)
+            elif data == "admin_signal":
+                await self.show_signal_broadcast_form(query)
+            elif data == "admin_send":
+                await self.show_user_message_form(query)
+            elif data == "admin_send_broadcast":
+                await self.start_broadcast_message(query)
+            elif data == "admin_main_menu":
+                await self.start_admin_menu(query)
+            elif data.startswith("confirm_user_"):
+                try:
+                    user_id = int(data.split("_")[2])
+                    await self.confirm_user_admin(query, user_id)
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Error parsing confirm_user callback: {e}")
+                    await query.edit_message_text("❌ Ошибка обработки запроса", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            elif data.startswith("block_user_"):
+                try:
+                    user_id = int(data.split("_")[2])
+                    await self.block_user_admin(query, user_id)
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Error parsing block_user callback: {e}")
+                    await query.edit_message_text("❌ Ошибка обработки запроса", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            elif data.startswith("message_user_"):
+                try:
+                    user_id = int(data.split("_")[2])
+                    await self.start_message_to_user(query, user_id)
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Error parsing message_user callback: {e}")
+                    await query.edit_message_text("❌ Ошибка обработки запроса", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+            else:
+                await query.edit_message_text("Выберите действие из меню.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
+        except Exception as e:
+            logger.error(f"Error in handle_admin_callback: {e}")
+            await query.edit_message_text("❌ Произошла ошибка. Попробуйте еще раз.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
 
     async def show_admin_users_list(self, query):
         """Show all users with their status"""
-        users = self.db.get_all_users_detailed()
-        if not users:
-            text = "👥 Пользователей пока нет"
-            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
-        else:
-            text = "👥 <b>Список всех пользователей:</b>\n\n"
-            keyboard = []
-            
-            for user in users[:10]:  # Show first 10 users
-                status_emoji = "✅" if user.get('id_status') == 'confirmed' else "⏳" if user.get('id_status') == 'pending' else "❌"
-                platform_id = user.get('platform_id', 'Не указан')
-                text += f"{status_emoji} <b>ID:</b> {user['user_id']}\n"
-                text += f"   <b>Имя:</b> {user.get('first_name', 'Неизвестно')}\n"
-                text += f"   <b>Platform ID:</b> {platform_id}\n"
-                text += f"   <b>Статус:</b> {user.get('id_status', 'Не указан')}\n\n"
+        try:
+            users = self.db.get_all_users_detailed()
+            if not users:
+                text = "👥 Пользователей пока нет"
+                keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]
+            else:
+                text = "👥 <b>Список всех пользователей:</b>\n\n"
+                keyboard = []
                 
-                # Add action buttons for each user
-                keyboard.append([
-                    InlineKeyboardButton(f"✅ Подтвердить {user['user_id']}", callback_data=f"confirm_user_{user['user_id']}"),
-                    InlineKeyboardButton(f"🚫 Блок {user['user_id']}", callback_data=f"block_user_{user['user_id']}")
-                ])
-                keyboard.append([
-                    InlineKeyboardButton(f"✉️ Написать {user['user_id']}", callback_data=f"message_user_{user['user_id']}")
-                ])
+                for user in users[:10]:  # Show first 10 users
+                    try:
+                        status_emoji = "✅" if user.get('id_status') == 'confirmed' else "⏳" if user.get('id_status') == 'pending' else "❌"
+                        platform_id = user.get('platform_id', 'Не указан')
+                        user_id = user.get('user_id', 'Неизвестно')
+                        first_name = user.get('first_name', 'Неизвестно')
+                        
+                        text += f"{status_emoji} <b>ID:</b> {user_id}\n"
+                        text += f"   <b>Имя:</b> {first_name}\n"
+                        text += f"   <b>Platform ID:</b> {platform_id}\n"
+                        text += f"   <b>Статус:</b> {user.get('id_status', 'Не указан')}\n\n"
+                        
+                        # Add action buttons for each user
+                        keyboard.append([
+                            InlineKeyboardButton(f"✅ Подтвердить {user_id}", callback_data=f"confirm_user_{user_id}"),
+                            InlineKeyboardButton(f"🚫 Блок {user_id}", callback_data=f"block_user_{user_id}")
+                        ])
+                        keyboard.append([
+                            InlineKeyboardButton(f"✉️ Написать {user_id}", callback_data=f"message_user_{user_id}")
+                        ])
+                    except Exception as e:
+                        logger.error(f"Error processing user {user}: {e}")
+                        continue
+                
+                keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")])
             
-            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.error(f"Error in show_admin_users_list: {e}")
+            await query.edit_message_text("❌ Ошибка загрузки списка пользователей", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_main_menu")]]))
 
     async def show_pending_users(self, query):
         """Show only pending users for confirmation"""
@@ -869,39 +896,47 @@ class BinaryOptionsBot:
     
     async def handle_id_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle user sending platform ID"""
-        user = update.effective_user
-        user_id = user.id
-        text = update.message.text.strip()
-        
-        # Check if this is admin sending a message or signal
-        if user_id == ADMIN_USER_ID:
-            await self.handle_admin_message(update, context, text)
-            return
-        
-        # Проверяем, что это число (ID платформы)
-        if not text.isdigit():
+        try:
+            user = update.effective_user
+            user_id = user.id
+            text = update.message.text.strip()
+            
+            # Check if this is admin sending a message or signal
+            if user_id == ADMIN_USER_ID:
+                await self.handle_admin_message(update, context, text)
+                return
+            
+            # Проверяем, что это число (ID платформы)
+            if not text.isdigit():
+                await update.message.reply_text(
+                    "❗️ ID должен содержать только цифры. Попробуй ещё раз.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+                )
+                return
+            # Проверяем, не занят ли этот ID
+            existing = self.db.get_user_by_platform_id(text)
+            if existing and existing.get('user_id') != user_id:
+                await update.message.reply_text(
+                    "⛔️ Этот ID уже используется другим пользователем.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
+                )
+                return
+            # Сохраняем ID и сбрасываем статус на 'pending'
+            self.db.set_platform_id(user_id, text)
             await update.message.reply_text(
-                "❗️ ID должен содержать только цифры. Попробуй ещё раз.",
+                "✅ ID сохранён!\n\nОжидай подтверждения — после проверки ты получишь доступ к сигналам.\n\nЕсли уже депнул — доступ откроется сразу.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
             )
-            return
-        # Проверяем, не занят ли этот ID
-        existing = self.db.get_user_by_platform_id(text)
-        if existing and existing.get('user_id') != user_id:
+            
+            # Уведомляем админа о новом ID
+            await self.notify_admin_new_id(user, text)
+            
+        except Exception as e:
+            logger.error(f"Error in handle_id_message: {e}")
             await update.message.reply_text(
-                "⛔️ Этот ID уже используется другим пользователем.",
+                "❌ Произошла ошибка при обработке сообщения. Попробуйте еще раз.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
             )
-            return
-        # Сохраняем ID и сбрасываем статус на 'pending'
-        self.db.set_platform_id(user_id, text)
-        await update.message.reply_text(
-            "✅ ID сохранён!\n\nОжидай подтверждения — после проверки ты получишь доступ к сигналам.\n\nЕсли уже депнул — доступ откроется сразу.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
-        )
-        
-        # Уведомляем админа о новом ID
-        await self.notify_admin_new_id(user, text)
 
     async def notify_admin_new_id(self, user, platform_id):
         """Notify admin about new platform ID submission"""
@@ -933,8 +968,10 @@ class BinaryOptionsBot:
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
+            logger.info(f"Admin notification sent for user {user.id} with platform_id {platform_id}")
         except Exception as e:
             logger.error(f"Error notifying admin: {e}")
+            # Don't crash the bot if admin notification fails
 
     async def handle_admin_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Handle admin sending messages or signals"""
