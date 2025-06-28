@@ -502,24 +502,39 @@ class BinaryOptionsBot:
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]])
                     )
                 else:
-                    signal = self.signal_generator.generate_signal('EUR/USD')
+                    # Generate a fresh signal
+                    signal = self.signal_generator.generate_signal()
                     if not signal:
                         await query.edit_message_text("😔 Сейчас нет сигнала. Попробуй позже.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]))
                     else:
-                        text = (
-                            f"📢 Готово! Текущий сигнал:\n\n"
-                            f"📍 Актив: {signal['asset']}\n"
-                            f"📈 ВХОД: {'ВВЕРХ' if signal['signal_type']=='CALL' else 'ВНИЗ'}\n"
-                            f"⏱ Время: сейчас\n"
-                            f"⌛ Срок: 2 минуты\n"
-                            f"💪 Уверенность: высокая\n\n"
-                            f"👀 Заходи быстро — окно сделки может закрыться!"
-                        )
+                        text = f"""
+📢 <b>ГОТОВО! Текущий сигнал:</b>
+
+📍 <b>Актив:</b> {signal['asset']}
+📈 <b>ВХОД:</b> {'ВВЕРХ' if signal['signal_type']=='CALL' else 'ВНИЗ'}
+⏱️ <b>Экспирация:</b> {signal['expiry_time']}
+💰 <b>Вход:</b> {signal['entry_price']}
+🎯 <b>Цель:</b> {signal['target_price']}
+🛑 <b>Стоп-лосс:</b> {signal['stop_loss']}
+📊 <b>Точность:</b> {signal['accuracy']}%
+
+⏰ <b>Время:</b> {signal['timestamp'].strftime('%H:%M:%S')}
+
+💡 <b>Рекомендации:</b>
+• Используйте 1-2% от депозита
+• Следуйте указанным уровням
+• Не торгуйте на эмоциях
+
+⚠️ <b>Риск-менеджмент:</b>
+Торговля бинарными опционами связана с высокими рисками.
+
+👀 <b>Заходи быстро — окно сделки может закрыться!</b>
+                        """
                         keyboard = [
                             [InlineKeyboardButton("📊 Получить еще сигналы", callback_data="get_signal"), InlineKeyboardButton("📈 Статистика", callback_data="statistics")],
                             [InlineKeyboardButton("🔙 Назад", callback_data="main_menu"), InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
                         ]
-                        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+                        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
             elif data == "main_menu":
                 await self.start_user_menu(query)
             elif data == "pay_premium":
@@ -1119,8 +1134,6 @@ class BinaryOptionsBot:
             
             self.application = Application.builder().token(BOT_TOKEN).build()
             self.setup_handlers()
-            # Remove scheduler for now to prevent crashes
-            # self.setup_scheduler()
             
             logger.info("Starting Binary Options Signals Bot...")
             
@@ -1131,11 +1144,12 @@ class BinaryOptionsBot:
             
             logger.info("Bot started successfully!")
             
+            # Start automatic signal broadcasting
+            asyncio.create_task(self.auto_broadcast_signals())
+            
             # Keep the bot running with better error handling
             while True:
                 try:
-                    # Remove scheduler for now
-                    # schedule.run_pending()
                     await asyncio.sleep(1)
                 except Exception as e:
                     logger.error(f"Error in main loop: {e}")
@@ -1154,6 +1168,73 @@ class BinaryOptionsBot:
                 logger.info("Bot stopped successfully")
             except Exception as e:
                 logger.error(f"Error stopping bot: {e}")
+
+    async def auto_broadcast_signals(self):
+        """Automatically broadcast signals every 15 minutes"""
+        while True:
+            try:
+                await asyncio.sleep(15 * 60)  # Wait 15 minutes
+                
+                # Generate and broadcast signal
+                signal = self.signal_generator.generate_signal()
+                if signal:
+                    await self.broadcast_signal_to_confirmed_users(signal)
+                    logger.info("Auto-broadcasted signal to confirmed users")
+                else:
+                    logger.info("No signal generated for auto-broadcast")
+                    
+            except Exception as e:
+                logger.error(f"Error in auto_broadcast_signals: {e}")
+                await asyncio.sleep(60)  # Wait 1 minute before retrying
+
+    async def broadcast_signal_to_confirmed_users(self, signal: dict):
+        """Broadcast signal only to confirmed users"""
+        try:
+            users = self.db.get_all_users_detailed()
+            confirmed_users = [user for user in users if user.get('id_status') == 'confirmed']
+            
+            if not confirmed_users:
+                logger.info("No confirmed users to send signals to")
+                return
+            
+            formatted_signal = f"""
+🚨 <b>АВТОМАТИЧЕСКИЙ СИГНАЛ!</b>
+
+📍 <b>Актив:</b> {signal['asset']}
+📈 <b>ВХОД:</b> {'ВВЕРХ' if signal['signal_type']=='CALL' else 'ВНИЗ'}
+⏱️ <b>Экспирация:</b> {signal['expiry_time']}
+💰 <b>Вход:</b> {signal['entry_price']}
+🎯 <b>Цель:</b> {signal['target_price']}
+🛑 <b>Стоп-лосс:</b> {signal['stop_loss']}
+📊 <b>Точность:</b> {signal['accuracy']}%
+
+⏰ <b>Время:</b> {signal['timestamp'].strftime('%H:%M:%S')}
+
+💡 <b>Рекомендации:</b>
+• Используйте 1-2% от депозита
+• Следуйте указанным уровням
+• Не торгуйте на эмоциях
+
+⚠️ <b>Риск-менеджмент:</b>
+Торговля бинарными опционами связана с высокими рисками.
+            """
+            
+            for user in confirmed_users:
+                try:
+                    await self.application.bot.send_message(
+                        user['user_id'],
+                        formatted_signal,
+                        parse_mode=ParseMode.HTML
+                    )
+                    await asyncio.sleep(0.1)  # Small delay to avoid rate limiting
+                except Exception as e:
+                    logger.error(f"Error sending auto-signal to user {user['user_id']}: {e}")
+                    continue
+            
+            logger.info(f"Auto-signal broadcasted to {len(confirmed_users)} confirmed users")
+            
+        except Exception as e:
+            logger.error(f"Error in broadcast_signal_to_confirmed_users: {e}")
 
 def run_http_stub():
     try:
