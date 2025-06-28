@@ -24,6 +24,8 @@ class Database:
                         username TEXT,
                         first_name TEXT,
                         last_name TEXT,
+                        platform_id TEXT, -- ID на платформе
+                        id_status TEXT DEFAULT 'pending', -- 'pending', 'confirmed', 'blocked'
                         subscription_type TEXT DEFAULT 'free',
                         subscription_expires TIMESTAMP,
                         is_active BOOLEAN DEFAULT TRUE,
@@ -263,4 +265,61 @@ class Database:
                 return True
         except Exception as e:
             logger.error(f"Error updating payment status: {e}")
-            return False 
+            return False
+    
+    def set_platform_id(self, user_id: int, platform_id: str):
+        """Сохраняет ID платформы для пользователя и сбрасывает статус на 'pending'"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE users SET platform_id = ?, id_status = 'pending' WHERE user_id = ?
+                ''', (platform_id, user_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error setting platform_id: {e}")
+            return False
+
+    def confirm_user_id(self, user_id: int):
+        """Подтверждает ID пользователя (доступ к сигналам)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE users SET id_status = 'confirmed' WHERE user_id = ?
+                ''', (user_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error confirming user id: {e}")
+            return False
+
+    def block_user(self, user_id: int):
+        """Блокирует пользователя"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE users SET id_status = 'blocked' WHERE user_id = ?
+                ''', (user_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error blocking user: {e}")
+            return False
+
+    def get_user_by_platform_id(self, platform_id: str) -> Optional[Dict]:
+        """Получить пользователя по platform_id"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM users WHERE platform_id = ?', (platform_id,))
+                user = cursor.fetchone()
+                if user:
+                    columns = [description[0] for description in cursor.description]
+                    return dict(zip(columns, user))
+                return None
+        except Exception as e:
+            logger.error(f"Error getting user by platform_id: {e}")
+            return None 

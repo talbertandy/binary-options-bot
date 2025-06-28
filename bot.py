@@ -32,45 +32,49 @@ class BinaryOptionsBot:
         self.application = None
         
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
+        """Handle /start command (customized for registration flow)"""
         user = update.effective_user
         user_id = user.id
-        
-        # Add user to database
         self.db.add_user(
             user_id=user_id,
             username=user.username,
             first_name=user.first_name,
             last_name=user.last_name
         )
-        
-        welcome_message = f"""
-🚀 Добро пожаловать в Binary Options Signals Bot!
-
-👋 Привет, {user.first_name}!
-
-📊 Я предоставляю точные торговые сигналы для бинарных опционов с использованием продвинутого технического анализа.
-
-🎯 Мои возможности:
-• Точные сигналы CALL/PUT
-• Множественные торговые пары
-• Различные временные фреймы
-• Высокая точность сигналов
-• Автоматическая рассылка
-
-💡 Для начала работы выберите подписку:
-        """
-        
-        keyboard = [
-            [InlineKeyboardButton("📊 Бесплатные сигналы", callback_data="free_signals")],
-            [InlineKeyboardButton("💎 Premium подписка", callback_data="premium")],
-            [InlineKeyboardButton("👑 VIP подписка", callback_data="vip")],
-            [InlineKeyboardButton("📈 Статистика", callback_data="statistics")],
-            [InlineKeyboardButton("ℹ️ Помощь", callback_data="help")]
-        ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
+        is_admin = user_id == 7873163395
+        if is_admin:
+            welcome_message = (
+                "👋 <b>Привет, Админ!</b>\n\n"
+                "Ты в админ-меню. Здесь ты можешь:\n"
+                "• Подтверждать/блокировать пользователей\n"
+                "• Рассылать сигналы\n"
+                "• Смотреть список юзеров\n"
+                "• Писать от имени бота\n\n"
+                "Выбери действие:")
+            keyboard = [
+                [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users")],
+                [InlineKeyboardButton("✅ Подтвердить ID", callback_data="admin_confirm")],
+                [InlineKeyboardButton("🚫 Заблокировать", callback_data="admin_block")],
+                [InlineKeyboardButton("📢 Рассылка сигнала", callback_data="admin_signal")],
+                [InlineKeyboardButton("✉️ Личное сообщение", callback_data="admin_send")],
+            ]
+        else:
+            welcome_message = (
+                "👋 Привет, трейдер!\n\n"
+                "Тут работают только те, кто реально заходит в сделки и поднимает.\n\n"
+                "📊 Я даю сигналы на вход. Что делать тебе — просто следовать.\n\n"
+                "Но сначала — 3 шага:\n"
+                "1. Регистрируешься по ссылке\n"
+                "2. Скидываешь ID\n"
+                "3. Депаешь — и получаешь доступ ко всем сигналам\n\n"
+                "🚀 Готов? Ниже всё, что нужно:")
+            keyboard = [
+                [InlineKeyboardButton("🔗 Зарегистрироваться", callback_data="register")],
+                [InlineKeyboardButton("🆔 Отправить ID", callback_data="send_id")],
+                [InlineKeyboardButton("📈 Получить сигнал", callback_data="get_signal")],
+                [InlineKeyboardButton("🤝 Поддержка", url="https://t.me/razgondepoz1ta")],
+            ]
+        reply_markup = InlineKeyboardMarkup([[btn] for btn in keyboard])
         await update.message.reply_text(
             welcome_message,
             reply_markup=reply_markup,
@@ -183,26 +187,57 @@ class BinaryOptionsBot:
         await update.message.reply_text(stats_text, parse_mode=ParseMode.HTML)
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle button callbacks"""
+        """Handle button callbacks for registration flow and admin"""
         query = update.callback_query
         await query.answer()
-        
         user_id = query.from_user.id
-        
-        if query.data == "free_signals":
-            await self.handle_free_signals(query)
-        elif query.data == "premium":
-            await self.handle_premium_subscription(query)
-        elif query.data == "vip":
-            await self.handle_vip_subscription(query)
-        elif query.data == "statistics":
-            await self.handle_statistics(query)
-        elif query.data == "help":
-            await self.handle_help(query)
-        elif query.data == "get_signals":
-            await self.send_latest_signals(user_id, query.edit_message_text)
-        elif query.data == "renew_subscription":
-            await self.handle_renew_subscription(query)
+        is_admin = user_id == 7873163395
+        data = query.data
+        if is_admin:
+            if data == "admin_users":
+                users = self.db.get_all_users()
+                text = f"👥 Всего пользователей: {len(users)}\n" + "\n".join([str(uid) for uid in users])
+                await query.edit_message_text(text)
+            elif data == "admin_confirm":
+                await query.edit_message_text("Введите команду /confirm ID для подтверждения пользователя.")
+            elif data == "admin_block":
+                await query.edit_message_text("Введите команду /block ID для блокировки пользователя.")
+            elif data == "admin_signal":
+                await query.edit_message_text("Введите команду /signal Актив Вход Время Срок для рассылки сигнала.")
+            elif data == "admin_send":
+                await query.edit_message_text("Введите команду /send ID текст для личного сообщения.")
+            else:
+                await query.edit_message_text("Выберите действие из меню.")
+            return
+        # --- User flow ---
+        if data == "register":
+            await query.edit_message_text(
+                "Регистрируйся только по этой ссылке 👇\nhttps://bit.ly/4jb8a4k\n\n‼️ Без неё ты не попадёшь в базу, и бот не даст тебе сигналы.\nПосле регистрации — скинь ID сюда.")
+        elif data == "send_id":
+            await query.edit_message_text(
+                "📤 Напиши сюда свой ID после регистрации на платформе.\nЯ вручную проверю — и открою тебе доступ к сигналам.\n\nЕсли уже депнул — получишь доступ сразу.")
+        elif data == "get_signal":
+            user = self.db.get_user(user_id)
+            if not user or user.get('id_status') != 'confirmed':
+                await query.edit_message_text(
+                    "⛔️ Доступ к сигналам пока закрыт.\n\nСначала зарегистрируйся 👉 https://bit.ly/4jb8a4k\nПотом скинь ID и пополни счёт — всё вручную проверяется.")
+            else:
+                # Генерируем сигнал (заглушка)
+                signal = self.signal_generator.generate_signal('EUR/USD')
+                if not signal:
+                    await query.edit_message_text("😔 Сейчас нет сигнала. Попробуй позже.")
+                else:
+                    text = (
+                        f"📢 Готово! Текущий сигнал:\n\n"
+                        f"📍 Актив: {signal['asset']}\n"
+                        f"📈 ВХОД: {'ВВЕРХ' if signal['signal_type']=='CALL' else 'ВНИЗ'}\n"
+                        f"⏱ Время: сейчас\n"
+                        f"⌛ Срок: 2 минуты\n"
+                        f"💪 Уверенность: высокая\n\n"
+                        f"👀 Заходи быстро — окно сделки может закрыться!"
+                    )
+                    await query.edit_message_text(text)
+        # Поддержка — просто ссылка, не требует обработки
     
     async def handle_free_signals(self, query):
         """Handle free signals request"""
@@ -490,85 +525,96 @@ class BinaryOptionsBot:
             logger.error(f"Error in broadcast_signals: {e}")
     
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle admin commands"""
+        """Handle admin commands (customized for new flow)"""
         user_id = update.effective_user.id
-        
-        if user_id != ADMIN_USER_ID:
+        if user_id != 7873163395:
             await update.message.reply_text("❌ У вас нет прав администратора.")
             return
-        
         if not context.args:
             await update.message.reply_text(
                 "🔧 <b>Команды администратора:</b>\n\n"
-                "/admin broadcast - Отправить сигналы всем пользователям\n"
-                "/admin stats - Показать статистику\n"
-                "/admin users - Список пользователей\n"
-                "/admin signal - Создать сигнал вручную",
+                "/users — Список пользователей\n"
+                "/send ID текст — Отправить личное сообщение\n"
+                "/signal Актив Вход Время Срок — Рассылка сигнала вручную\n"
+                "/confirm ID — Подтвердить доступ\n"
+                "/block ID — Забанить юзера\n"
+                "/check ID — Проверить статус",
                 parse_mode=ParseMode.HTML
             )
             return
-        
         command = context.args[0]
-        
-        if command == "broadcast":
-            await self.broadcast_signals()
-            await update.message.reply_text("✅ Сигналы отправлены всем подписчикам!")
-        
-        elif command == "stats":
-            stats = self.signal_generator.get_statistics()
+        if command == "users":
             users = self.db.get_all_users()
-            subscribed_users = self.db.get_subscribed_users()
-            
-            stats_text = f"""
-📊 <b>Статистика бота</b>
-
-👥 Всего пользователей: {len(users)}
-✅ Подписчиков: {len(subscribed_users)}
-📈 Сигналов сгенерировано: {stats['total_signals']}
-🎯 Процент успеха: {stats['success_rate']:.1f}%
-            """
-            
-            await update.message.reply_text(stats_text, parse_mode=ParseMode.HTML)
-        
-        elif command == "users":
+            text = f"👥 Всего пользователей: {len(users)}\n" + "\n".join([str(uid) for uid in users])
+            await update.message.reply_text(text)
+        elif command == "send" and len(context.args) >= 3:
+            target_id = int(context.args[1])
+            msg = " ".join(context.args[2:])
+            try:
+                await self.application.bot.send_message(target_id, f"✉️ Сообщение от админа:\n{msg}")
+                await update.message.reply_text("✅ Сообщение отправлено.")
+            except Exception:
+                await update.message.reply_text("❌ Не удалось отправить сообщение.")
+        elif command == "signal" and len(context.args) >= 5:
+            asset, direction, time_str, expiry = context.args[1:5]
+            text = (f"📢 Ручной сигнал!\n\n"
+                    f"📍 Актив: {asset}\n"
+                    f"📈 ВХОД: {direction}\n"
+                    f"⏱ Время: {time_str}\n"
+                    f"⌛ Срок: {expiry}\n"
+                    f"💪 Уверенность: высокая")
             users = self.db.get_all_users()
-            users_text = f"👥 Всего пользователей: {len(users)}\n\n"
-            
-            for i, user_id in enumerate(users[:10], 1):  # Show first 10 users
-                user = self.db.get_user(user_id)
-                if user:
-                    users_text += f"{i}. {user.get('first_name', 'Unknown')} (@{user.get('username', 'no_username')})\n"
-            
-            if len(users) > 10:
-                users_text += f"\n... и еще {len(users) - 10} пользователей"
-            
-            await update.message.reply_text(users_text)
-        
-        elif command == "signal":
-            if len(context.args) < 4:
-                await update.message.reply_text(
-                    "❌ Использование: /admin signal <asset> <type> <expiry> [accuracy]"
-                )
-                return
-            
-            asset = context.args[1]
-            signal_type = context.args[2]
-            expiry_time = context.args[3]
-            accuracy = float(context.args[4]) if len(context.args) > 4 else 85.0
-            
-            signal = {
-                'asset': asset,
-                'signal_type': signal_type,
-                'expiry_time': expiry_time,
-                'entry_price': 1.0000,
-                'target_price': 1.0010,
-                'stop_loss': 0.9990,
-                'accuracy': accuracy,
-                'timestamp': datetime.now()
-            }
-            
-            await self.broadcast_signals()
-            await update.message.reply_text(f"✅ Сигнал создан и отправлен: {asset} {signal_type}")
+            for uid in users:
+                try:
+                    await self.application.bot.send_message(uid, text)
+                except Exception:
+                    pass
+            await update.message.reply_text("✅ Сигнал разослан.")
+        elif command == "confirm" and len(context.args) == 2:
+            target_id = int(context.args[1])
+            self.db.confirm_user_id(target_id)
+            await update.message.reply_text(f"✅ Доступ для {target_id} подтверждён.")
+            try:
+                await self.application.bot.send_message(target_id, "✅ Доступ к сигналам открыт! Можешь получать сигналы.")
+            except Exception:
+                pass
+        elif command == "block" and len(context.args) == 2:
+            target_id = int(context.args[1])
+            self.db.block_user(target_id)
+            await update.message.reply_text(f"🚫 Пользователь {target_id} заблокирован.")
+            try:
+                await self.application.bot.send_message(target_id, "🚫 Ваш доступ заблокирован администратором.")
+            except Exception:
+                pass
+        elif command == "check" and len(context.args) == 2:
+            target_id = int(context.args[1])
+            user = self.db.get_user(target_id)
+            if not user:
+                await update.message.reply_text("❌ Пользователь не найден.")
+            else:
+                await update.message.reply_text(f"ID: {user.get('platform_id')}\nСтатус: {user.get('id_status')}")
+        else:
+            await update.message.reply_text("❌ Неизвестная команда или неверные параметры.")
+    
+    async def handle_id_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle user sending platform ID"""
+        user = update.effective_user
+        user_id = user.id
+        text = update.message.text.strip()
+        # Проверяем, что это число (ID платформы)
+        if not text.isdigit():
+            await update.message.reply_text("❗️ ID должен содержать только цифры. Попробуй ещё раз.")
+            return
+        # Проверяем, не занят ли этот ID
+        existing = self.db.get_user_by_platform_id(text)
+        if existing and existing.get('user_id') != user_id:
+            await update.message.reply_text("⛔️ Этот ID уже используется другим пользователем.")
+            return
+        # Сохраняем ID и сбрасываем статус на 'pending'
+        self.db.set_platform_id(user_id, text)
+        await update.message.reply_text(
+            "✅ ID сохранён!\n\nОжидай подтверждения — после проверки ты получишь доступ к сигналам.\n\nЕсли уже депнул — доступ откроется сразу.")
+        # TODO: Запустить автонапоминания (через 30 мин, 1 час, 2 часа...)
     
     def setup_handlers(self):
         """Setup bot handlers"""
@@ -579,6 +625,7 @@ class BinaryOptionsBot:
         self.application.add_handler(CommandHandler("statistics", self.statistics_command))
         self.application.add_handler(CommandHandler("admin", self.admin_command))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_id_message))
     
     def setup_scheduler(self):
         """Setup signal generation scheduler"""
